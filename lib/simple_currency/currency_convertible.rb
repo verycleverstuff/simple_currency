@@ -11,7 +11,10 @@ module CurrencyConvertible
 
   class Proxy
     attr_reader :numeric
-
+    attr_accessor :cache
+    
+    @@cache = {}
+    
     def initialize(numeric,currency)
       @numeric = numeric
       @currency = currency
@@ -95,8 +98,8 @@ module CurrencyConvertible
     def call_xavier_api(original, target)
 
       # Check if there is any cached XML for the specified date
-      if defined?(Rails)
-        parsed_response = Rails.cache.read("xaviermedia_#{stringified_exchange_date}")
+      if @@cache.include?("#{original}_#{target}_#{stringified_exchange_date}") then
+        parsed_response = @@cache["xaviermedia_#{stringified_exchange_date}"]
       end
 
       unless parsed_response # Unless there is a cached XML response, ask for it
@@ -124,10 +127,8 @@ module CurrencyConvertible
 
         return nil unless xml_response && parsed_response = Crack::XML.parse(xml_response)["xavierresponse"]["exchange_rates"]["fx"]
 
-        # Cache successful XML response for later reuse
-        if defined?(Rails)
-          Rails.cache.write("xaviermedia_#{stringified_exchange_date}", parsed_response)
-        end
+        @@cache["xaviermedia_#{stringified_exchange_date}"] = parsed_response
+        puts @@cache
       end
 
       calculate_rate(parsed_response, original, target)
@@ -171,13 +172,13 @@ module CurrencyConvertible
     #
     def stringified_exchange_date
       value = (@exchange_date || Time.now.send(:to_date))
-      [value.day, value.month, value.year].join('-')
+      [value.month, value.year].join('-')
     end
 
     # Writes rate to the cache.
     #
     def cache_rate(original, target, rate)
-      Rails.cache.write("#{original}_#{target}_#{stringified_exchange_date}", rate) if defined?(Rails)
+      @@cache["#{original}_#{target}_#{stringified_exchange_date}"] = rate
     end
 
     # Tries to either get rate or calculate the inverse rate from cache.
@@ -187,11 +188,8 @@ module CurrencyConvertible
     # inverts it.
     #
     def cached_rate(original, target)
-      if defined?(Rails)
-        unless rate = Rails.cache.read("#{original}_#{target}_#{stringified_exchange_date}")
-          rate = (1.0 / Rails.cache.read("#{target}_#{original}_#{stringified_exchange_date}")) rescue nil
-        end
-        rate
+      if @@cache.include?("#{original}_#{target}_#{stringified_exchange_date}") then
+        rate = @@cache["#{original}_#{target}_#{stringified_exchange_date}"]
       end
     end
 
